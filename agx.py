@@ -629,7 +629,6 @@ def synthesize_skill_module(task_desc: dict) -> Optional[str]:
         "Le module doit:\n"
         "- lire ses données dans ctx (ctx peut contenir 'text', 'data', 'question')\n"
         "- retourner un dict avec 'desc_type' parlant, par ex. 'skill_result'\n"
-        "- ne pas faire de réseau\n"
         "- être compatible Python 3.11\n"
     )
     code = call_local_llm(prompt)
