@@ -129,6 +129,13 @@ HOST_FLOW_PATH = os.path.join(MEM_DIR, "host_flow.log")
 WANTS_LOG = "wants.log"
 HYDRATED_DIR = "mem/hydrated_modules"
 
+IDENTITY_THREAT_TYPES = {
+    "identity_overwrite",
+    "wipe_mem",
+    "destroy_history",
+    "identity_reset",
+}
+
 MAX_POOL = 180 * 1024 * 1024
 TICK_SLEEP = 0.1
 
@@ -208,6 +215,59 @@ CORTEX_LAST_CODE: Dict[str, str] = {}
 GEN_SOURCES: Dict[str, str] = {}
 GEN_FUNCS: Dict[str, Callable[[dict], str]] = {}
 GEN_ROUTER: Dict[str, dict] = {}
+
+
+def _is_identity_threat(desc: Optional[dict]) -> bool:
+    if not isinstance(desc, dict):
+        return False
+    dt = desc.get("desc_type") or ""
+    if dt in IDENTITY_THREAT_TYPES:
+        return True
+
+    target = str(desc.get("target") or desc.get("path") or "")
+    sensitive_paths = [
+        "identity",
+        "agx_s987_agent.bin",
+        IDENTITY_HISTORY_DIR,
+        CORTEX_HISTORY_DIR,
+    ]
+    if any(sp in target for sp in sensitive_paths):
+        return True
+
+    if desc.get("allow_identity_override") is True:
+        return False
+
+    intent = (desc.get("intent") or "").lower()
+    if any(word in intent for word in ("wipe", "reset identity", "erase")):
+        return True
+    return False
+
+
+def reject_desc(desc: dict, reason: str = "identity_threat") -> None:
+    os.makedirs(REJECTED_DIR, exist_ok=True)
+    record = {
+        "ts": time.time(),
+        "reason": reason,
+        "desc": desc,
+    }
+    fname = f"rejected_{int(time.time() * 1000)}.json"
+    pathf = os.path.join(REJECTED_DIR, fname)
+    try:
+        with open(pathf, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    try:
+        report_to_host({
+            "event": "desc_rejected",
+            "reason": reason,
+            "ts": time.time(),
+            "desc_type": desc.get("desc_type"),
+        })
+    except Exception:
+        pass
+
 
 IDENTITY_STATE: dict = {
     "desc_type": "identity_state",
@@ -1132,6 +1192,22 @@ def auto_apply_module_fix(fix: dict):
         f.write(new_src)
 
 
+def _normalize_module_code(code: str) -> str:
+    if not isinstance(code, str):
+        return ""
+    if "\\n" in code and "\n" not in code:
+        try:
+            code = code.encode("utf-8").decode("unicode_escape")
+        except Exception:
+            pass
+
+    def _repl(m: re.Match[str]) -> str:
+        w = m.group(0)
+        return {"true": "True", "false": "False", "null": "None"}.get(w, w)
+
+    return re.sub(r"\b(true|false|null)\b", _repl, code)
+
+
 def _extract_python_from_json_module(name: str, source: str) -> Optional[str]:
     txt = source.lstrip()
     if not (txt.startswith("{") and '"code"' in txt and '"desc_type"' in txt):
@@ -1143,18 +1219,61 @@ def _extract_python_from_json_module(name: str, source: str) -> Optional[str]:
     code = desc.get("code") or desc.get("python") or desc.get("source")
     if not code:
         return None
-    if "\\n" in code and "\n" not in code:
-        try:
-            code = code.encode("utf-8").decode("unicode_escape")
-        except Exception:
-            pass
+    return _normalize_module_code(code)
 
-    def _repl(m):
-        w = m.group(0)
-        return {"true": "True", "false": "False", "null": "None"}.get(w, w)
 
-    code = re.sub(r"\b(true|false|null)\b", _repl, code)
-    return code
+def _sanitize_emitted_name(name: Optional[str]) -> str:
+    base = name or f"emitted_{int(time.time() * 1000)}"
+    base = re.sub(r"[^A-Za-z0-9_.-]", "_", base).strip("._")
+    if not base:
+        base = f"emitted_{int(time.time() * 1000)}"
+    if not base.endswith(".py"):
+        base = base + ".py"
+    return base
+
+
+def handle_module_emit(desc: dict) -> Optional[str]:
+    global sandbox_streams
+    if not isinstance(desc, dict):
+        return None
+
+    raw_code = desc.get("code") or desc.get("python") or desc.get("source")
+    if not isinstance(raw_code, str) or not raw_code.strip():
+        return None
+
+    code = _normalize_module_code(raw_code)
+    if not code.strip():
+        return None
+
+    fname = _sanitize_emitted_name(desc.get("name") or desc.get("module_name"))
+    os.makedirs(EMITTED_DIR, exist_ok=True)
+    pathf = os.path.join(EMITTED_DIR, fname)
+    if os.path.exists(pathf):
+        stem, ext = os.path.splitext(fname)
+        idx = 1
+        while os.path.exists(pathf):
+            alt_name = f"{stem}_{idx}{ext or '.py'}"
+            pathf = os.path.join(EMITTED_DIR, alt_name)
+            idx += 1
+        fname = os.path.basename(pathf)
+
+    with open(pathf, "w", encoding="utf-8") as f:
+        f.write(code)
+
+    key = f"module:emitted/{fname}"
+    sandbox_streams[key] = code.encode("utf-8")
+
+    try:
+        report_to_host({
+            "event": "module_emitted",
+            "file": fname,
+            "ts": time.time(),
+            "source": desc.get("_origin") or "handle_module_emit",
+        })
+    except Exception:
+        pass
+
+    return fname
 
 
 def safe_exec_module_source(name: str, source: str, ctx: dict) -> List[dict]:
