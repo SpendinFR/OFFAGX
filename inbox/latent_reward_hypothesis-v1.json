@@ -1,0 +1,30 @@
+{
+  "desc_type": "latent_reward_hypothesis.v1",
+  "schema_v": 2,
+  "lang_v": 24,
+  "note": "hypothèse de récompense vectorielle pour V900/S500",
+  "components": {
+    "structural": {
+      "match": ["engine_patch", "generator_self_patch", "generator_add", "module_emit", "schema_patch", "orchestrator_frag", "archivist_frag", "planner_frag", "evaluator_frag"],
+      "weight": 4.0
+    },
+    "epistemic": {
+      "match": ["math_task", "open_conjecture", "research_task", "research_result", "erdos_problem", "math_workflow"],
+      "weight": 5.0
+    },
+    "social": {
+      "match": ["host_message", "conversation_reply", "conversation_ping", "host_presence", "love_host"],
+      "weight": 2.5
+    },
+    "maintenance": {
+      "match": ["maintenance_event", "os_task", "maintenance_error"],
+      "weight": 1.0
+    }
+  },
+  "combine": "weighted_sum",
+  "emit_evaluator_frag": {
+    "desc_type": "evaluator_frag",
+    "name": "latent_reward_eval_v1",
+    "eval_code": "LATENT = {\n    'structural': {'match': ['engine_patch', 'generator_self_patch', 'generator_add', 'module_emit', 'schema_patch', 'orchestrator_frag', 'archivist_frag', 'planner_frag', 'evaluator_frag'], 'weight': 4.0},\n    'epistemic': {'match': ['math_task', 'open_conjecture', 'research_task', 'research_result', 'erdos_problem', 'math_workflow'], 'weight': 5.0},\n    'social': {'match': ['host_message', 'conversation_reply', 'conversation_ping', 'host_presence', 'love_host'], 'weight': 2.5},\n    'maintenance': {'match': ['maintenance_event', 'os_task', 'maintenance_error'], 'weight': 1.0},\n}\n\ndef _match(dt: str, pats: list[str]) -> bool:\n    for p in pats:\n        if p.endswith('*'):\n            if dt.startswith(p[:-1]):\n                return True\n        else:\n            if dt == p:\n                return True\n    return False\n\ndef evaluate(run_ctx: dict) -> dict:\n    descs = run_ctx.get('descs') or []\n    scores = {\n        'structural': 0.0,\n        'epistemic': 0.0,\n        'social': 0.0,\n        'maintenance': 0.0,\n    }\n    for d in descs:\n        dt = d.get('desc_type', '')\n        if _match(dt, LATENT['structural']['match']):\n            scores['structural'] += LATENT['structural']['weight']\n        if _match(dt, LATENT['epistemic']['match']):\n            scores['epistemic'] += LATENT['epistemic']['weight']\n        if _match(dt, LATENT['social']['match']):\n            scores['social'] += LATENT['social']['weight']\n        if _match(dt, LATENT['maintenance']['match']):\n            scores['maintenance'] += LATENT['maintenance']['weight']\n    total = scores['structural'] + scores['epistemic'] + scores['social'] + scores['maintenance']\n    # important: on renvoie AUSSI le vecteur → pour que le routeur de générateurs puisse s’en servir\n    return {\n        'score': total,\n        'vector': scores,\n        'desc_type': 'latent_reward_eval_result',\n    }\n"
+  }
+}

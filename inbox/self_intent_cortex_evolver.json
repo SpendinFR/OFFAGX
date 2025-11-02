@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "self_intent_cortex_evolver",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','self_contract')\\nEVLOG = os.path.join(BASE,'cortex_evolution.log')\\n\\ndef run(ctx=None):\\n    now = time.time()\\n    plan = {\\n        'desc_type': 'cortex_evolution_plan',\\n        'ts': now,\\n        'reason': 'self_intent_low',\\n        'insert_fragments': [\\n            {\\n                'desc_type': 'planner_frag',\\n                'code': \"# auto-plan pour renforcer le self\\\\n\"\\n                        \"import time, json\\\\n\"\\n                        \"def plan(ctx):\\\\n\"\\n                        \"    return [{ 'desc_type': 'self_reflection_task', 'question': 'quel bout de mon cortex n est pas dans mon contrat ?', 'ts': time.time() }]\"\\n            }\\n        ],\\n        'rebuild': ['planner','generator','social']\\n    }\\n    os.makedirs(BASE, exist_ok=True)\\n    with open(EVLOG,'a',encoding='utf-8') as f:\\n        f.write(json.dumps(plan,ensure_ascii=False)+'\\\\n')\\n    return plan\\n"
+}

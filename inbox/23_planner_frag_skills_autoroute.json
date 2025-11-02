@@ -1,0 +1,5 @@
+{
+  "desc_type": "planner_frag",
+  "name": "skills_autoroute_all_tasks",
+  "code": "import time, json\n\ndef plan(ctx):\n    streams = ctx.get('streams') or []\n    out = []\n    for s in streams:\n        if 'inbox:task_' in s or 'task_request' in s or 'host_goal_hypothesis' in s:\n            out.append({\n                'desc_type': 'module_call',\n                'module': 'skill_requirement_router.py',\n                'task': 'auto-from-stream',\n                'ts': time.time()\n            })\n    return out\n"
+}

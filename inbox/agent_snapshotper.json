@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "agent_snapshotper",
+  "code": "import os, json, time\\nBASE = 'mem/cortex_history'\\nMOD_DIR = 'modules'\\n\\ndef _list_modules():\\n    mods = []\\n    for root, _dirs, files in os.walk(MOD_DIR):\\n        for f in files:\\n            if f.endswith('.py'):\\n                path = os.path.join(root, f)\\n                with open(path, 'r', encoding='utf-8', errors='ignore') as fh:\\n                    src = fh.read()\\n                mods.append({'name': os.path.relpath(path, MOD_DIR), 'src': src})\\n    return mods\\n\\ndef run(ctx=None):\\n    os.makedirs(BASE, exist_ok=True)\\n    snap = {\\n        'desc_type': 'agent_snapshot',\\n        'ts': time.time(),\\n        'modules': _list_modules(),\\n        'streams': list((ctx or {}).get('streams', [])),\\n    }\\n    name = f'snap_{int(time.time()*1000)}.json'\\n    with open(os.path.join(BASE, name), 'w', encoding='utf-8') as f:\\n        json.dump(snap, f, ensure_ascii=False, indent=2)\\n    return {'desc_type': 'agent_snapshot_written', 'file': name, 'ts': time.time()}\\n"
+}

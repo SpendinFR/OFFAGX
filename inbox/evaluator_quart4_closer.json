@@ -1,0 +1,5 @@
+{
+  "desc_type": "evaluator_frag",
+  "name": "evaluator_quart4_closer",
+  "code": "import time\\nTARGETS = {\\n  'limit_shape_mdl_best': 10,\\n  'transition_rule_set_written': 10,\\n  'cortex_evolution_plan': 3,\\n  'limit_shape_inferred': 5,\\n  'cortex_evolution_plan_result': 6,\\n  'host_detached_success': 10\\n}\\n\\ndef evaluate(run_ctx: dict) -> dict:\\n    ds = run_ctx.get('descs') or []\\n    score = 0; why = []\\n    for d in ds:\\n        dt = d.get('desc_type')\\n        if dt in TARGETS:\\n            score += TARGETS[dt]\\n            why.append(dt)\\n    return {'score': score, 'why': why, 'ts': time.time()}\\n"
+}

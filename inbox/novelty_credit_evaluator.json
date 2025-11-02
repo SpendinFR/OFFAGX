@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "novelty_credit_evaluator",
+  "code": "import os, json, time\\nOUT = 'outbox/novelty.log'\\nKNOWN_PREFIXES = ('conversation_','math_','research_','engine_','module_','planner_','evaluator_','orchestrator_','archivist_','social_','affect_')\\n\\ndef run(ctx=None):\\n    descs = (ctx or {}).get('descs') or []\\n    score = 0\\n    novel = []\\n    for d in descs:\\n        dt = d.get('desc_type') or ''\\n        if not dt: continue\\n        if any(dt.startswith(p) for p in KNOWN_PREFIXES):\\n            continue\\n        score += 5  # vrai bonus de rupture\\n        novel.append(dt)\\n    if score == 0:\\n        return {'desc_type':'novelty_idle'}\\n    os.makedirs(os.path.dirname(OUT), exist_ok=True)\\n    evt = {'ts':time.time(),'score':score,'novel':novel}\\n    with open(OUT,'a',encoding='utf-8') as f: f.write(json.dumps(evt,ensure_ascii=False)+'\\\\n')\\n    # on renvoie un desc que ton routeur peut utiliser\\n    return {'desc_type':'novelty_credit','score':score,'novel':novel}"
+}

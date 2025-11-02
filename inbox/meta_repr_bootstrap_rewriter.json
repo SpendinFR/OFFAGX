@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "meta_repr_bootstrap_rewriter",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','meta_repr')\\nHIST = os.path.join(BASE,'rewrite_history.log')\\n\\ndef run(ctx=None):\\n    plan = {\\n        'desc_type': 'meta_repr_rewrite_plan',\\n        'ts': time.time(),\\n        'rewrites': [\\n            { 'op': 'rewrite_planner_to_ir',   'target_repr': 'AGX_IR1' },\\n            { 'op': 'rewrite_evaluator_to_ir', 'target_repr': 'AGX_IR1' }\\n        ]\\n    }\\n    os.makedirs(BASE, exist_ok=True)\\n    with open(HIST,'a',encoding='utf-8') as f:\\n        f.write(json.dumps(plan,ensure_ascii=False)+'\\\\n')\\n    return plan\\n"
+}

@@ -1,0 +1,6 @@
+{
+  "desc_type": "bench_run",
+  "suite": ["summarize", "extract", "plan", "code"],
+  "note": "forcer de la variété pour entraîner les frags",
+  "ts": 1762048020.0
+}

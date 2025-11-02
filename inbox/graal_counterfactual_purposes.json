@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "graal_counterfactual_purposes",
+  "code": "import os, json, time, copy\\nBASE = os.path.join('mem','graal')\\nSPACE = os.path.join(BASE,'purpose_space.json')\\nCF = os.path.join(BASE,'counterfactuals.log')\\n\\ndef run(ctx=None):\\n    if not os.path.exists(SPACE):\\n        return {'desc_type':'graal_cf_wait_space'}\\n    with open(SPACE,'r',encoding='utf-8') as f: space = json.load(f)\\n    purp = space.get('purposes') or []\\n    alts = []\\n    for p in purp:\\n        alt = copy.deepcopy(space)\\n        for q in alt['purposes']:\\n            if q['id'] == p['id']:\\n                q['w'] = float(q.get('w',1.0)) * 1.25\\n        alts.append(alt)\\n    out_descs = []\\n    ts = time.time()\\n    for a in alts:\\n        out_descs.append({\\n            'desc_type':'final_form_hypothesis',\\n            'shape':'cf_from_purpose',\\n            'counterfactual_space': a,\\n            'ts': ts\\n        })\\n    os.makedirs(BASE, exist_ok=True)\\n    with open(CF,'a',encoding='utf-8') as f: f.write(json.dumps({'ts':ts,'n':len(out_descs)},ensure_ascii=False)+'\\\\n')\\n    return out_descs"
+}

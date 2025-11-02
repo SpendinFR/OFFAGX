@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "host_pref_negative_auditor",
+  "code": "import os, json, time, re\\nNEG = os.path.join('mem','host_pref','negatives.json')\\nSRC1 = os.path.join('outbox','host_events.log')\\nPAT = re.compile(r'on l.avait d.?ja|ca on l.a.vait dejà', re.IGNORECASE)\\n\\ndef _load_neg():\\n    if not os.path.exists(NEG): return []\\n    with open(NEG,'r',encoding='utf-8') as f: return json.load(f)\\n\\ndef _save_neg(x):\\n    os.makedirs(os.path.dirname(NEG), exist_ok=True)\\n    with open(NEG,'w',encoding='utf-8') as f: json.dump(x,f,ensure_ascii=False,indent=2)\\n\\ndef run(ctx=None):\\n    neg = _load_neg()\\n    if os.path.exists(SRC1):\\n        with open(SRC1,'r',encoding='utf-8',errors='ignore') as f:\\n            for line in f:\\n                if PAT.search(line):\\n                    neg.append({'ts': time.time(), 'src': 'outbox', 'line': line.strip()[:300]})\\n    _save_neg(neg)\\n    return {'desc_type':'host_pref_negative_collected','count':len(neg)}"
+}

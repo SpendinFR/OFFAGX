@@ -1,0 +1,5 @@
+{
+  "desc_type": "evaluator_frag",
+  "name": "implicit_goal_credit",
+  "code": "import time\\nTARGET_DESCS = {'research_task','inverse_host_goal','host_spec_model_updated','host_spec_gaps_computed'}\\n\\ndef evaluate(run_ctx: dict) -> dict:\\n    descs = run_ctx.get('descs') or []\\n    score = 0\\n    for d in descs:\\n        dt = d.get('desc_type')\\n        if dt in TARGET_DESCS: score += 4\\n        if dt == 'cortex_evolution_plan': score += 2\\n        if dt == 'agent_candidate': score += 1\\n    return {'score': score, 'reason': 'implicit_goal_progress', 'ts': time.time()}\\n"
+}

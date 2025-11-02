@@ -1,0 +1,9 @@
+{
+  "desc_type": "research_space_builder.v1",
+  "note": "construire un graphe de problèmes à partir des math_task et research_result",
+  "emit_module": {
+    "desc_type": "module_emit",
+    "name": "research_space_builder",
+    "code": "import os, json, time, hashlib\\nBASE = 'mem/research_space'\\n\\ndef _nid(d):\\n    raw = json.dumps(d, sort_keys=True).encode('utf-8')\\n    return hashlib.sha1(raw).hexdigest()[:12]\\n\\ndef run(ctx=None):\\n    os.makedirs(BASE, exist_ok=True)\\n    streams = (ctx or {}).get('streams') or []\\n    space = {'nodes':{}, 'edges':[]}\\n    idx_path = os.path.join(BASE, 'space.json')\\n    if os.path.exists(idx_path):\\n        with open(idx_path,'r',encoding='utf-8') as f: space = json.load(f)\\n    # on ne peut pas lire le contenu des streams ici → mais dans ton vrai runtime tu pourras ouvrir les fichiers\\n    # on va donc juste ajouter des nodes par nom\\n    for s in streams:\\n        if 'math_task' in s or 'open_conjecture' in s or 'research_result' in s:\\n            nid = _nid({'name': s, 'ts': time.time()})\\n            space['nodes'][nid] = {'name': s, 'ts': time.time()}\\n    # TODO: déduire les liens par similarité de nom\\n    with open(idx_path,'w',encoding='utf-8') as f: json.dump(space,f,ensure_ascii=False,indent=2)\\n    return {'desc_type':'research_space_updated','nodes':len(space['nodes']),'ts':time.time()}\\n"
+  }
+}

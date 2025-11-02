@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "host_pref_state",
+  "code": "import os, json, time\\nBASE = 'mem/host_pref'\\nSTATE = os.path.join(BASE, 'state.json')\\nAXES = [\\n    'depth_of_self_mod',      # à quel point tu te recodes toi-même\\n    'structure_discovery',    # à quel point tu découvres des schémas/grammaires\\n    'math_push',              # à quel point tu pousses vers les problèmes maths\\n    'host_modeling',          # à quel point tu modèles l'hôte explicitement\\n    'safety/invariants'       # à quel point tu gardes la boucle saine\\n]\\n\\ndef run(ctx=None):\\n    os.makedirs(BASE, exist_ok=True)\\n    if not os.path.exists(STATE):\\n        st = {\\n            'ts_created': time.time(),\\n            'axes': AXES,\\n            'weights': {a: 0.0 for a in AXES},\\n            'pending_query': None,\\n            'history': []\\n        }\\n        with open(STATE, 'w', encoding='utf-8') as f: json.dump(st, f, ensure_ascii=False, indent=2)\\n        return {'desc_type':'host_pref_state_init','axes':AXES}\\n    return {'desc_type':'host_pref_state_ok'}"
+}

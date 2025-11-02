@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "meta_repr_registry",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','meta_repr')\\nREG  = os.path.join(BASE,'repr_registry.json')\\n\\nDEFAULT_REPRS = [\\n    { 'id': 'S500_JSON', 'kind': 'concrete', 'priority': 1, 'note': 'desc_type + pool actuel' },\\n    { 'id': 'AGX_IR1', 'kind': 'abstract', 'priority': 2, 'note': 'forme lambda/record pour raisonner' },\\n    { 'id': 'HOST_VIEW', 'kind': 'projection', 'priority': 5, 'note': 'ce que voit l humain' }\\n]\\n\\ndef run(ctx=None):\\n    os.makedirs(BASE, exist_ok=True)\\n    if not os.path.exists(REG):\\n        with open(REG,'w',encoding='utf-8') as f: json.dump({ 'ts': time.time(), 'reprs': DEFAULT_REPRS }, f, ensure_ascii=False, indent=2)\\n        return { 'desc_type': 'meta_repr_registry_created', 'reprs': DEFAULT_REPRS, 'ts': time.time() }\\n    with open(REG,'r',encoding='utf-8') as f: data = json.load(f)\\n    return { 'desc_type': 'meta_repr_registry_loaded', 'reprs': data.get('reprs',[]), 'ts': time.time() }"
+}

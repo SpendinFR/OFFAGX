@@ -1,0 +1,5 @@
+{
+  "desc_type": "archivist_frag",
+  "name": "cortex_history_rt",
+  "code": "# --- cortex history ---\nimport os, json, time, hashlib\n\ndef _safe_name(d: dict) -> str:\n    raw = json.dumps(d, sort_keys=True).encode('utf-8')\n    return hashlib.sha1(raw).hexdigest()[:12]\n\n# on log TOUT ce qui ressemble à une évolution de cortex\nif desc.get('desc_type') in (\n    'generator_rebuilt',\n    'planner_rebuilt',\n    'evaluator_rebuilt',\n    'orchestrator_rebuilt',\n    'archivist_rebuilt',\n    'social_rebuilt',\n    'affect_rebuilt',\n    'research_rebuilt',\n    'cortex_evolution_plan'\n):\n    base2 = os.path.join(base, 'cortex_history')\n    os.makedirs(base2, exist_ok=True)\n    name = f\\\"{int(time.time()*1000)}_{desc.get('desc_type')}_{_safe_name(desc)}.json\\\"\n    with open(os.path.join(base2, name), 'w', encoding='utf-8') as f:\n        json.dump(desc, f, ensure_ascii=False, indent=2)"
+}

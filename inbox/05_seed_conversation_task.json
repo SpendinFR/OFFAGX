@@ -1,0 +1,6 @@
+{
+  "desc_type": "conversation_layer_task",
+  "missing": ["text", "conversation_state"],
+  "goal": "gérer les échanges avec le host à partir des derniers messages dans mem/host_flow.log",
+  "ts": 1762048010.0
+}

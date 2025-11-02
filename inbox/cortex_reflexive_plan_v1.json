@@ -1,0 +1,5 @@
+{
+  "desc_type": "planner_frag",
+  "name": "cortex_reflexive_plan_v1",
+  "code": "# toutes les 25 générations, on se propose d'évoluer\nif gen % 25 == 0:\n    out.append({\n        'desc_type': 'cortex_evolution_plan',\n        'target_cortex': ['generator', 'planner'],\n        'insert_frags': [\n            {'desc_type': 'generator_frag', 'code': '# tiny improve\\\\npass\\\\n'},\n            {'desc_type': 'planner_frag', 'code': '# planner refine\\\\npass\\\\n'}\n        ],\n        'test_scenario': {\n            'descs': [\n                {'desc_type': 'math_task', 'topic': 'toy'},\n                {'desc_type': 'research_task', 'note': 'sanity'}\n            ]\n        },\n        'ts': time.time()\n    })"
+}

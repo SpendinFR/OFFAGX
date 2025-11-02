@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "graal_gap_closure",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','graal')\\nMISS  = os.path.join(BASE,'gaps_uncovered.log')\\nPATCH = os.path.join(BASE,'closure.log')\\n\\ndef run(ctx=None):\\n    if not os.path.exists(MISS):\\n        return {'desc_type':'graal_gap_closure_idle'}\\n    with open(MISS,'r',encoding='utf-8') as f: lines = f.readlines()[-10:]\\n    if not lines:\\n        return {'desc_type':'graal_gap_closure_idle'}\\n    patches = []\\n    ts = time.time()\\n    for l in lines:\\n        try: g = json.loads(l)\\n        except Exception: continue\\n        gk = g.get('gap_kind','unknown')\\n        patches.append({\\n            'desc_type': 'graal_extension_frag',\\n            'covers': gk,\\n            'derived_from': g,\\n            'ts': ts,\\n            'note': 'auto-generated extension to make graal sufficient'\\n        })\\n    with open(PATCH,'a',encoding='utf-8') as f:\\n        for p in patches: f.write(json.dumps(p,ensure_ascii=False)+'\\\\n')\\n    return patches"
+}

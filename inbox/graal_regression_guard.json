@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "graal_regression_guard",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','graal')\\nPATCH = os.path.join(BASE,'closure.log')\\n\\ndef run(ctx=None):\\n    if not os.path.exists(PATCH):\\n        return {'desc_type':'graal_regression_idle'}\\n    with open(PATCH,'r',encoding='utf-8') as f: lines = f.readlines()[-15:]\\n    reinject = []\\n    for l in lines:\\n        try: p = json.loads(l)\\n        except Exception: continue\\n        p['_reinject'] = True\\n        reinject.append(p)\\n    return {\\n        'desc_type':'graal_regression_plan',\\n        'to_reinject': reinject,\\n        'ts': time.time(),\\n        'note': 'if future cortex drops these, reapply'\\n    }"
+}

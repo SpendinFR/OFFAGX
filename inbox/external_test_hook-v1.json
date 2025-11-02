@@ -1,0 +1,9 @@
+{
+  "desc_type": "external_test_hook.v1",
+  "note": "ajoute un plan de test réel pour chaque module_emit / research module",
+  "emit_planner_frag": {
+    "desc_type": "planner_frag",
+    "name": "external_test_injection",
+    "code": "import time, json, os\\n# ce fragment fabrique un desc de test dès qu'il voit un module fraîchement émis\\nTEST_DIR = 'mem/ext_tests'\\n\\ndef plan(ctx: dict) -> list[dict]:\\n    os.makedirs(TEST_DIR, exist_ok=True)\\n    streams = ctx.get('streams') or []\\n    out = []\\n    for s in streams:\\n        if 'emitted/' in s or 'research_' in s:\\n            # au lieu de juste accepter, on fabrique un test desc\\n            out.append({\\n                'desc_type': 'external_test_request',\\n                'target': s,\\n                'protocol': 'run-and-capture',\\n                'expected': ['desc_type'],\\n                'ts': time.time()\\n            })\\n    return out\\n"
+  }
+}

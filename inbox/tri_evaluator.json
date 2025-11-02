@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "tri_evaluator",
+  "code": "import json, time, os\\nOUT = 'outbox'\\nSTRUCT_TYPES = {'core','cortex','generator','planner'}\\n\\ndef run(ctx=None):\\n    ctx = ctx or {}\\n    H = ctx.get('H', {})\\n    S = ctx.get('S', {})\\n    M = ctx.get('M', {})\\n    evt = {\\n        'desc_type': 'tri_eval',\\n        'H': H,\\n        'S': S,\\n        'M': M,\\n        'ts': time.time(),\\n    }\\n    os.makedirs(OUT, exist_ok=True)\\n    with open(os.path.join(OUT, 'tri_eval.log'), 'a', encoding='utf-8') as f:\\n        f.write(json.dumps(evt, ensure_ascii=False) + '\\\\n')\\n    return {'desc_type':'tri_eval_result','H':H,'S':S,'M':M}\\n"
+}

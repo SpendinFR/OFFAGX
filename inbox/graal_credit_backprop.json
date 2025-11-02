@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "graal_credit_backprop",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','graal')\\nBEST = os.path.join(BASE,'best_hypo.json')\\nROUTER = os.path.join('mem','graal','gen_router_hint.json')\\n\\ndef run(ctx=None):\\n    if not os.path.exists(BEST):\\n        return {'desc_type':'graal_credit_wait_best'}\\n    with open(BEST,'r',encoding='utf-8') as f: best = json.load(f)\\n    hypo = (best or {}).get('hypothesis') or {}\\n    shape = hypo.get('shape') or 'unknown'\\n    # on donne un hint au noyau : formes preferees → generer plus souvent\\n    hint = {\\n        'prefer_shapes': [shape],\\n        'ts': time.time()\\n    }\\n    os.makedirs(BASE, exist_ok=True)\\n    with open(ROUTER,'w',encoding='utf-8') as f: json.dump(hint,f,ensure_ascii=False,indent=2)\\n    return {'desc_type':'generator_pref_hint','shape':shape}"
+}

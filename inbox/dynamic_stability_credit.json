@@ -1,0 +1,5 @@
+{
+  "desc_type": "evaluator_frag",
+  "name": "dynamic_stability_credit",
+  "code": "import time\\nINTERESTING = {'cortex_evolution_plan','limit_shape_inferred','limit_shape_counterexample'}\\n\\ndef evaluate(run_ctx: dict) -> dict:\\n    descs = run_ctx.get('descs') or []\\n    score = 0\\n    details = []\\n    for d in descs:\\n        dt = d.get('desc_type')\\n        if dt == 'limit_shape_inferred':\\n            score += 5; details.append('inferred_limit')\\n        elif dt == 'cortex_evolution_plan':\\n            score += 3; details.append('tested_limit')\\n        elif dt == 'limit_shape_counterexample':\\n            score += 6; details.append('found_counterexample')\\n    return {'score': score, 'why': details, 'ts': time.time()}\\n"
+}

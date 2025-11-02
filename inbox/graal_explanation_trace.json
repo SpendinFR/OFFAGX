@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "graal_explanation_trace",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','graal')\\nTRACE = os.path.join(BASE,'explanations.log')\\nBEST = os.path.join(BASE,'best_hypo.json')\\nSPACE = os.path.join(BASE,'purpose_space.json')\\n\\ndef run(ctx=None):\\n    if not os.path.exists(BEST):\\n        return {'desc_type':'graal_explain_wait_best'}\\n    with open(BEST,'r',encoding='utf-8') as f: best = json.load(f)\\n    space = {}\\n    if os.path.exists(SPACE):\\n        with open(SPACE,'r',encoding='utf-8') as f: space = json.load(f)\\n    ev = {\\n        'desc_type': 'graal_explanation',\\n        'ts': time.time(),\\n        'chosen': best,\\n        'purpose_space': space,\\n        'ctx_streams_n': len((ctx or {}).get('streams') or []),\\n        'reason': 'best score on self-centered purposes (survive_self/expand_self)',\\n    }\\n    os.makedirs(BASE, exist_ok=True)\\n    with open(TRACE,'a',encoding='utf-8') as f: f.write(json.dumps(ev,ensure_ascii=False)+'\\\\n')\\n    return ev"
+}

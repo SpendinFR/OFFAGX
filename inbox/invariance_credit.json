@@ -1,0 +1,5 @@
+{
+  "desc_type": "evaluator_frag",
+  "name": "invariance_credit",
+  "code": "import time, json\\nEXPECTED = {'cortex_evolution_plan', 'agent_candidate', 'host_forward_scores_written'}\\n\\ndef evaluate(run_ctx: dict) -> dict:\\n    descs = run_ctx.get('descs') or []\\n    credit = 0\\n    for d in descs:\\n        dt = d.get('desc_type')\\n        if dt in EXPECTED: credit += 3\\n        if dt == 'agent_snapshot_written': credit += 2\\n        if dt == 'host_constraint_model_updated': credit += 1\\n    return {'score': credit, 'ts': time.time()}\\n"
+}

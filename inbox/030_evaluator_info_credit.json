@@ -1,0 +1,5 @@
+{
+  "desc_type": "evaluator_frag",
+  "name": "info_credit_v1",
+  "code": "# --- info credit evaluator ---\nHIGH_VALUE = {\n    'math_task': 6,\n    'research_result': 7,\n    'engine_patch': 5,\n    'generator_self_patch': 5,\n    'module_emit': 4,\n    'cortex_evolution_plan': 6\n}\nMED_VALUE = {\n    'conversation_reply': 2,\n    'conversation_ping': 1,\n    'maintenance_event': 1\n}\n\ndescs = run_ctx.get('descs') or []\nscore = 0\nfor d in descs:\n    dt = d.get('desc_type')\n    if dt in HIGH_VALUE:\n        score += HIGH_VALUE[dt]\n    elif dt in MED_VALUE:\n        score += MED_VALUE[dt]\n    else:\n        score += 1\n# on redonne le score dans le format que le noyau comprend\nrun_ctx['info_credit'] = score\nreturn {'score': score}"
+}

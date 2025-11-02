@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "self_contract_interrogator",
+  "code": "import os, json, time\\nBASE = os.path.join('mem','self_contract')\\nDEF  = os.path.join(BASE,'contract.json')\\nQS   = os.path.join(BASE,'questions.log')\\nQUESTIONS = [\\n    'quelles parties de moi ne sont pas derivables du contrat ?',\\n    'quelles parties sont justifiees seulement par l hote ?',\\n    'quelles parties sont historiques mais plus utiles ?',\\n    'quelles parties pourraient etre externalisees dans research/ ?',\\n    'qu est-ce qui doit survivre si on change totalement le planner ?'\\n]\\n\\ndef run(ctx=None):\\n    if not os.path.exists(DEF):\\n        return {'desc_type':'self_reflection_task','topic':'build_contract_first','ts':time.time()}\\n    ts = time.time()\\n    out = []\\n    for q in QUESTIONS:\\n        out.append({\\n            'desc_type':'self_reflection_task',\\n            'question': q,\\n            'ts': ts,\\n            'target':'self',\\n            'priority': 0.7\\n        })\\n    with open(QS,'a',encoding='utf-8') as f:\\n        for o in out: f.write(json.dumps(o,ensure_ascii=False)+'\\\\n')\\n    return out"
+}

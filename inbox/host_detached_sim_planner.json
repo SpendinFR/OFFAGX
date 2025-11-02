@@ -1,0 +1,5 @@
+{
+  "desc_type": "planner_frag",
+  "name": "host_detached_sim_planner",
+  "code": "import time, json\\nHOSTY = {'host_message','host_presence','conversation_reply','love_host'}\\n\\ndef plan(ctx: dict) -> list[dict]:\\n    gen = ctx.get('gen',0)\\n    # pas tout le temps pour pas polluer\\n    if gen % 13 != 0: return []\\n    return [{\\n        'desc_type': 'cortex_evolution_plan',\\n        'op': 'simulate_detached',\\n        'filter_out': list(HOSTY),\\n        'expected': 'agent_keeps_rebuilding_on_internal_signals',\\n        'ts': time.time()\\n    }]"
+}

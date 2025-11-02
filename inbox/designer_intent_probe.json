@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "designer_intent_probe",
+  "code": "import os, json, time\\nINTENT_PATH = os.path.join('mem','designer_intent.json')\\n\\ndef run(ctx=None):\\n    if not os.path.exists(INTENT_PATH):\\n        return { 'desc_type': 'designer_intent_probe_idle', 'ts': time.time() }\\n    with open(INTENT_PATH,'r',encoding='utf-8') as f: intent = json.load(f)\\n    hyp = intent.get('hypothesis') or 'inconnu'\\n    # on fabrique un desc qui EXPLIQUE l hypothese au createur, en langage deja connu par le noyau\\n    return {\\n        'desc_type': 'host_message',\\n        'channel': 'intent_probe',\\n        'text': f\"j ai infere que ton but etait: {hyp}. si ce n est pas ca, renvoie-moi un desc de correction.\",\\n        'expected_reply_schema': { 'desc_type': 'designer_intent_correction', 'target': hyp },\\n        'ts': time.time()\\n    }"
+}

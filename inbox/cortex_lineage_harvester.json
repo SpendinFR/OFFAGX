@@ -1,0 +1,5 @@
+{
+  "desc_type": "module_emit",
+  "name": "cortex_lineage_harvester",
+  "code": "import os, json, time, hashlib\\nMEM = 'mem/cortex_lineage'\\nMOD = 'modules'\\n\\ndef _hash_file(path):\\n    try:\\n        with open(path, 'rb') as f: return hashlib.sha1(f.read()).hexdigest()\\n    except Exception: return None\\n\\ndef _snapshot_modules():\\n    snaps = []\\n    for root, _d, files in os.walk(MOD):\\n        for fn in files:\\n            if not fn.endswith('.py'): continue\\n            p = os.path.join(root, fn)\\n            snaps.append({'file': os.path.relpath(p, MOD), 'sha1': _hash_file(p)})\\n    return snaps\\n\\ndef run(ctx=None):\\n    os.makedirs(MEM, exist_ok=True)\\n    snap = {\\n        'ts': time.time(),\\n        'gen': int(time.time()*1000),  # tu peux remplacer par ton vrai gen\\n        'modules': _snapshot_modules(),\\n        'streams': list((ctx or {}).get('streams', [])),\\n    }\\n    name = f'snap_{int(time.time()*1000)}.json'\\n    with open(os.path.join(MEM, name), 'w', encoding='utf-8') as f: json.dump(snap, f, ensure_ascii=False, indent=2)\\n    return {'desc_type':'cortex_lineage_snap_written','file':name}"
+}

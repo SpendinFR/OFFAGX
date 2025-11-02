@@ -1,0 +1,29 @@
+{
+  "desc_type": "host_goal_hypothesis.v1",
+  "schema_v": 2,
+  "lang_v": 24,
+  "note": "inférence du but réel de l'hôte à partir des outputs que l'hôte laisse passer",
+  "signals": {
+    "positive": [
+      "research_result",
+      "math_workflow",
+      "engine_patch",
+      "generator_self_patch",
+      "cortex_snapshot"
+    ],
+    "neutral": [
+      "conversation_ping",
+      "text_emit"
+    ],
+    "negative_hint": [
+      "module_fix",
+      "host_patch_fix",
+      "maintenance_error"
+    ]
+  },
+  "emit_planner_frag": {
+    "desc_type": "planner_frag",
+    "name": "host_goal_exploration",
+    "code": "import time, json\\nHYPOS = [\\n  {'name':'h1_math','likes':['math_task','research_result']},\\n  {'name':'h2_structure','likes':['engine_patch','generator_self_patch','schema_patch']},\\n  {'name':'h3_social','likes':['conversation_reply','host_presence']}\\n]\\n\\ndef _score_hypo(h, streams):\\n    s = 0\\n    likes = h.get('likes',[])\\n    for st in streams:\\n        for lk in likes:\\n            if lk in st: s += 1\\n    return s\\n\\ndef plan(ctx: dict) -> list[dict]:\\n    streams = ctx.get('streams') or []\\n    scored = [(h, _score_hypo(h, streams)) for h in HYPOS]\\n    scored.sort(key=lambda x: x[1], reverse=True)\\n    best = scored[0][0]\\n    # on émet une tâche exprès pour DÉSAMBIGUÏSER l'hôte\\n    return [{\\n        'desc_type': 'host_query',\\n        'hypo': best['name'],\\n        'text': f\"est-ce que c'est bien {best['name']} que tu veux que je maximise ?\",\\n        'ts': time.time()\\n    }]\\n"
+  }
+}

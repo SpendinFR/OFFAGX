@@ -1,0 +1,5 @@
+{
+  "desc_type": "evaluator_frag",
+  "name": "evaluator_dedup_skills_v1",
+  "code": "import os, json, time\nREG_PATH = 'mem/skills_registry.json'\n\ndef _existing():\n    if not os.path.exists(REG_PATH):\n        return set()\n    try:\n        data = json.load(open(REG_PATH, 'r', encoding='utf-8'))\n    except Exception:\n        return set()\n    return {d['name'] for d in data if 'name' in d}\n\n\ndef evaluate(run_ctx: dict) -> dict:\n    score = 0\n    descs = run_ctx.get('descs') or []\n    existing = _existing()\n    for d in descs:\n        dt = d.get('desc_type')\n        if dt == 'skill_request':\n            name = d.get('name') or ''\n            if name in existing:\n                score -= 5  # doublon → on punit\n            else:\n                score += 2  # nouveau skill utile\n        else:\n            score += 1\n    return {'score': score, 'ts': time.time()}\n"
+}
