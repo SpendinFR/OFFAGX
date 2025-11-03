@@ -1074,15 +1074,20 @@ def infer_skill_need_from_desc(d: dict) -> Optional[dict]:
 # ============================================================
 
 def build_from_frags(base_header: str, frags: List[dict], default_body: str) -> str:
-    if not frags:
-        return base_header + "\n" + default_body
-    parts: List[str] = [base_header]
-    for frag in frags:
-        body = frag.get("code") or frag.get("python") or frag.get("render") or ""
-        if body:
+    parts: List[str] = [base_header.rstrip("\n")]
+
+    if frags:
+        for frag in frags:
+            body = frag.get("code") or frag.get("python") or frag.get("render") or ""
+            if not body:
+                continue
             for line in body.splitlines():
                 parts.append("    " + line)
-    return "\n".join(parts)
+
+    if default_body:
+        parts.append(default_body.rstrip("\n"))
+
+    return "\n".join(parts) + "\n"
 
 
 def build_generator() -> str:
@@ -1213,9 +1218,9 @@ def build_archivist() -> str:
         "# archivist S987 (cosmic)\n"
         "import json, time, os, hashlib\n"
         "def archive(desc: dict, base: str):\n"
-        "    os.makedirs(base, exist_ok=True)\n"
     )
     default_body = (
+        "    os.makedirs(base, exist_ok=True)\n"
         "    did = desc.get('id') or hashlib.sha1(json.dumps(desc,sort_keys=True).encode('utf-8')).hexdigest()[:12]\n"
         "    with open(os.path.join(base, did+'.json'), 'w', encoding='utf-8') as f:\n"
         "        json.dump(desc, f, ensure_ascii=False, indent=2)\n"
