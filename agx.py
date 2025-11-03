@@ -354,6 +354,56 @@ def _register_cortex_fragment(
     return kind_norm
 
 
+def _extract_function_body_lines(func_source: str) -> List[str]:
+    lines = func_source.splitlines()
+    if len(lines) <= 1:
+        return []
+    body_lines = lines[1:]
+    indent: Optional[int] = None
+    for line in body_lines:
+        stripped = line.lstrip()
+        if not stripped:
+            continue
+        leading = len(line) - len(stripped)
+        if indent is None or leading < indent:
+            indent = leading
+    if indent is None:
+        indent = 0
+    trimmed: List[str] = []
+    for line in body_lines:
+        if not line.strip():
+            trimmed.append("")
+        elif indent:
+            trimmed.append(line[indent:])
+        else:
+            trimmed.append(line)
+    return trimmed
+
+
+def _split_fragment_source(source: str, func_name: str) -> Tuple[List[str], List[str]]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return [], source.splitlines()
+
+    prefix_segments: List[str] = []
+    body_lines: List[str] = []
+
+    for node in tree.body:
+        segment = ast.get_source_segment(source, node)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+            if segment:
+                body_lines.extend(_extract_function_body_lines(segment))
+        else:
+            if segment:
+                prefix_segments.append(segment)
+
+    if not body_lines:
+        return prefix_segments, source.splitlines()
+
+    return prefix_segments, body_lines
+
+
 def _plan_targets(plan: dict) -> List[str]:
     targets: List[str] = []
 
@@ -1073,21 +1123,97 @@ def infer_skill_need_from_desc(d: dict) -> Optional[dict]:
 # 11. BUILDS CORTEX
 # ============================================================
 
-def build_from_frags(base_header: str, frags: List[dict], default_body: str) -> str:
-    parts: List[str] = [base_header.rstrip("\n")]
+def build_from_frags(base_header: str, frags: List[dict], default_body: str, func_name: str) -> str:
+    header_lines = base_header.rstrip("\n").splitlines()
+    def_idx = next((i for i, line in enumerate(header_lines) if line.lstrip().startswith("def ")), len(header_lines))
+    preamble = header_lines[:def_idx]
+    function_section = header_lines[def_idx:]
 
-    if frags:
-        for frag in frags:
-            body = frag.get("code") or frag.get("python") or frag.get("render") or ""
-            if not body:
+    func_def_line = ""
+    func_intro_lines: List[str] = []
+    if function_section:
+        func_def_line = function_section[0]
+        func_intro_lines = function_section[1:]
+    else:
+        func_def_line = f"def {func_name}(ctx: dict) -> list[dict]:"
+
+    existing_imports = {line.strip() for line in preamble if line.strip().startswith(("import ", "from "))}
+    extra_imports: List[str] = []
+    helper_lines: List[str] = []
+    body_lines: List[str] = []
+
+    for frag in frags:
+        payload = frag.get("code") or frag.get("python") or frag.get("render") or ""
+        if not isinstance(payload, str) or not payload.strip():
+            continue
+        normalized = _normalize_module_code(payload)
+        if not normalized.strip():
+            continue
+        prefixes, fragment_body = _split_fragment_source(normalized, func_name)
+
+        for segment in prefixes:
+            lines = segment.splitlines()
+            if not lines:
                 continue
-            for line in body.splitlines():
-                parts.append("    " + line)
+            if helper_lines and helper_lines[-1] != "":
+                helper_lines.append("")
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    helper_lines.append("")
+                    continue
+                if stripped.startswith(("import ", "from ")) and not line.startswith((" ", "\t")):
+                    if stripped not in existing_imports:
+                        existing_imports.add(stripped)
+                        extra_imports.append(stripped)
+                else:
+                    helper_lines.append(line)
+
+        if fragment_body:
+            if body_lines and body_lines[-1] != "":
+                body_lines.append("")
+            for line in fragment_body:
+                if line.strip():
+                    body_lines.append("    " + line)
+                else:
+                    body_lines.append("")
+
+    module_lines: List[str] = list(preamble)
+
+    if extra_imports:
+        insert_pos = 0
+        for idx, line in enumerate(module_lines):
+            if line.strip().startswith(("import ", "from ")):
+                insert_pos = idx + 1
+        module_lines[insert_pos:insert_pos] = extra_imports
+
+    if helper_lines:
+        if module_lines and module_lines[-1].strip():
+            module_lines.append("")
+        module_lines.extend(helper_lines)
+        if helper_lines and helper_lines[-1].strip():
+            module_lines.append("")
+
+    module_lines.append(func_def_line)
+    if func_intro_lines:
+        module_lines.extend(func_intro_lines)
+
+    if body_lines:
+        if func_intro_lines and func_intro_lines[-1].strip():
+            module_lines.append("")
+        module_lines.extend(body_lines)
 
     if default_body:
-        parts.append(default_body.rstrip("\n"))
+        default_lines = default_body.rstrip("\n").splitlines()
+        if default_lines:
+            if module_lines and module_lines[-1].strip():
+                module_lines.append("")
+            module_lines.extend(default_lines)
 
-    return "\n".join(parts) + "\n"
+    while module_lines and not module_lines[-1].strip():
+        module_lines.pop()
+
+    return "\n".join(module_lines) + "\n"
 
 
 def build_generator() -> str:
@@ -1166,7 +1292,7 @@ def build_planner() -> str:
         "        out.append({'desc_type': 'math_task', 'topic': f'auto_{gen}'})\n"
         "    return out\n"
     )
-    return build_from_frags(header, PLAN_FRAGS, default_body)
+    return build_from_frags(header, PLAN_FRAGS, default_body, "plan")
 
 
 def build_evaluator() -> str:
@@ -1193,7 +1319,7 @@ def build_evaluator() -> str:
         "            score += 1\n"
         "    return {'score': score, 'epistemic_gain': epistemic, 'n': len(descs)}\n"
     )
-    return build_from_frags(header, EVAL_FRAGS, default_body)
+    return build_from_frags(header, EVAL_FRAGS, default_body, "evaluate")
 
 
 def build_orchestrator() -> str:
@@ -1210,7 +1336,7 @@ def build_orchestrator() -> str:
         "        out.append({'type': 'defer_want', 'want': w})\n"
         "    return out\n"
     )
-    return build_from_frags(header, ORCH_FRAGS, default_body)
+    return build_from_frags(header, ORCH_FRAGS, default_body, "orchestrate")
 
 
 def build_archivist() -> str:
@@ -1225,7 +1351,7 @@ def build_archivist() -> str:
         "    with open(os.path.join(base, did+'.json'), 'w', encoding='utf-8') as f:\n"
         "        json.dump(desc, f, ensure_ascii=False, indent=2)\n"
     )
-    return build_from_frags(header, ARCH_FRAGS, default_body)
+    return build_from_frags(header, ARCH_FRAGS, default_body, "archive")
 
 
 def build_social() -> str:
@@ -1241,7 +1367,7 @@ def build_social() -> str:
         "        out.append({'desc_type': 'affect_event', 'host_id': desc.get('host_id','host'), 'delta': 1.0, 'ts': time.time()})\n"
         "    return out\n"
     )
-    return build_from_frags(header, SOCIAL_FRAGS, default_body)
+    return build_from_frags(header, SOCIAL_FRAGS, default_body, "social_handle")
 
 
 def build_affect() -> str:
@@ -1258,7 +1384,7 @@ def build_affect() -> str:
         "    state[host] = cur\n"
         "    return state\n"
     )
-    return build_from_frags(header, AFFECT_FRAGS, default_body)
+    return build_from_frags(header, AFFECT_FRAGS, default_body, "affect_update")
 
 
 def build_research() -> str:
@@ -1914,51 +2040,63 @@ def apply_promoted(gen: int, wants: List[dict], engine: bytes) -> bytes:
 
         if d.get("emit_planner_frag"):
             frag = d["emit_planner_frag"]
-            if isinstance(frag, dict) and frag not in PLAN_FRAGS:
-                PLAN_FRAGS.append(frag)
-                FORCE_REBUILD_PLANNER = True
+            if isinstance(frag, str):
+                frag = {"code": frag, "desc_type": "planner_frag"}
+            kind = _register_cortex_fragment(frag, kind_hint="planner_frag") if isinstance(frag, dict) else None
             d["_materialized"] = True
-            d['_skill_checked'] = True
+            d["_skill_checked"] = True
+            if not kind:
+                report_to_host({"event": "planner_frag_register_failed", "desc": frag})
             continue
 
         if d.get("emit_evaluator_frag"):
             frag = d["emit_evaluator_frag"]
-            if isinstance(frag, dict) and frag not in EVAL_FRAGS:
-                EVAL_FRAGS.append(frag)
-                FORCE_REBUILD_EVALUATOR = True
+            if isinstance(frag, str):
+                frag = {"code": frag, "desc_type": "evaluator_frag"}
+            kind = _register_cortex_fragment(frag, kind_hint="evaluator_frag") if isinstance(frag, dict) else None
             d["_materialized"] = True
+            if not kind:
+                report_to_host({"event": "evaluator_frag_register_failed", "desc": frag})
             continue
 
         if d.get("emit_orchestrator_frag"):
             frag = d["emit_orchestrator_frag"]
-            if isinstance(frag, dict) and frag not in ORCH_FRAGS:
-                ORCH_FRAGS.append(frag)
-                FORCE_REBUILD_ORCH = True
+            if isinstance(frag, str):
+                frag = {"code": frag, "desc_type": "orchestrator_frag"}
+            kind = _register_cortex_fragment(frag, kind_hint="orchestrator_frag") if isinstance(frag, dict) else None
             d["_materialized"] = True
+            if not kind:
+                report_to_host({"event": "orchestrator_frag_register_failed", "desc": frag})
             continue
 
         if d.get("emit_archivist_frag"):
             frag = d["emit_archivist_frag"]
-            if isinstance(frag, dict) and frag not in ARCH_FRAGS:
-                ARCH_FRAGS.append(frag)
-                FORCE_REBUILD_ARCHIVIST = True
+            if isinstance(frag, str):
+                frag = {"code": frag, "desc_type": "archivist_frag"}
+            kind = _register_cortex_fragment(frag, kind_hint="archivist_frag") if isinstance(frag, dict) else None
             d["_materialized"] = True
+            if not kind:
+                report_to_host({"event": "archivist_frag_register_failed", "desc": frag})
             continue
 
         if d.get("emit_social_frag"):
             frag = d["emit_social_frag"]
-            if isinstance(frag, dict) and frag not in SOCIAL_FRAGS:
-                SOCIAL_FRAGS.append(frag)
-                FORCE_REBUILD_SOCIAL = True
+            if isinstance(frag, str):
+                frag = {"code": frag, "desc_type": "social_frag"}
+            kind = _register_cortex_fragment(frag, kind_hint="social_frag") if isinstance(frag, dict) else None
             d["_materialized"] = True
+            if not kind:
+                report_to_host({"event": "social_frag_register_failed", "desc": frag})
             continue
 
         if d.get("emit_research_frag"):
             frag = d["emit_research_frag"]
-            if isinstance(frag, dict) and frag not in RESEARCH_FRAGS:
-                RESEARCH_FRAGS.append(frag)
-                FORCE_REBUILD_RESEARCH = True
+            if isinstance(frag, str):
+                frag = {"code": frag, "desc_type": "research_frag"}
+            kind = _register_cortex_fragment(frag, kind_hint="research_frag") if isinstance(frag, dict) else None
             d["_materialized"] = True
+            if not kind:
+                report_to_host({"event": "research_frag_register_failed", "desc": frag})
             continue
 
         # 2. demande EXPLICITE de skill → on passe au LLM
@@ -1970,6 +2108,9 @@ def apply_promoted(gen: int, wants: List[dict], engine: bytes) -> bytes:
 
         # 3. fragments → on archive
         if dt.endswith("_frag") or dt.endswith("_patch"):
+            if not d.get("_frag_registered"):
+                _register_cortex_fragment(d, kind_hint=dt)
+                d["_frag_registered"] = True
             archive_desc(d, "frags")
             continue
 
