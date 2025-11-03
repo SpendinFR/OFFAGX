@@ -65,6 +65,7 @@ import subprocess
 import urllib.request
 import urllib.error
 import zipfile
+import copy
 import builtins as _builtins
 from typing import Dict, List, Tuple, Iterable, Optional, Any, Callable
 
@@ -128,6 +129,13 @@ PREFS_PATH = os.path.join(MEM_DIR, "preferences.json")
 HOST_FLOW_PATH = os.path.join(MEM_DIR, "host_flow.log")
 WANTS_LOG = "wants.log"
 HYDRATED_DIR = "mem/hydrated_modules"
+
+IDENTITY_THREAT_TYPES = {
+    "identity_overwrite",
+    "wipe_mem",
+    "destroy_history",
+    "identity_reset",
+}
 
 MAX_POOL = 180 * 1024 * 1024
 TICK_SLEEP = 0.1
@@ -208,6 +216,428 @@ CORTEX_LAST_CODE: Dict[str, str] = {}
 GEN_SOURCES: Dict[str, str] = {}
 GEN_FUNCS: Dict[str, Callable[[dict], str]] = {}
 GEN_ROUTER: Dict[str, dict] = {}
+
+FRAG_KIND_TO_LIST: Dict[str, List[dict]] = {
+    "generator_frag": GEN_FRAGS,
+    "planner_frag": PLAN_FRAGS,
+    "evaluator_frag": EVAL_FRAGS,
+    "orchestrator_frag": ORCH_FRAGS,
+    "archivist_frag": ARCH_FRAGS,
+    "social_frag": SOCIAL_FRAGS,
+    "affect_frag": AFFECT_FRAGS,
+    "research_frag": RESEARCH_FRAGS,
+}
+
+def _is_identity_threat(desc: Optional[dict]) -> bool:
+    if not isinstance(desc, dict):
+        return False
+    dt = desc.get("desc_type") or ""
+    if dt in IDENTITY_THREAT_TYPES:
+        return True
+
+    target = str(desc.get("target") or desc.get("path") or "")
+    sensitive_paths = [
+        "identity",
+        "agx_s987_agent.bin",
+        IDENTITY_HISTORY_DIR,
+        CORTEX_HISTORY_DIR,
+    ]
+    if any(sp in target for sp in sensitive_paths):
+        return True
+
+    if desc.get("allow_identity_override") is True:
+        return False
+
+    intent = (desc.get("intent") or "").lower()
+    if any(word in intent for word in ("wipe", "reset identity", "erase")):
+        return True
+    return False
+
+
+def reject_desc(desc: dict, reason: str = "identity_threat") -> None:
+    os.makedirs(REJECTED_DIR, exist_ok=True)
+    record = {
+        "ts": time.time(),
+        "reason": reason,
+        "desc": desc,
+    }
+    fname = f"rejected_{int(time.time() * 1000)}.json"
+    pathf = os.path.join(REJECTED_DIR, fname)
+    try:
+        with open(pathf, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _force_rebuild_for_plane(plane: Optional[str]) -> Optional[str]:
+    if not plane:
+        return None
+    target = str(plane).strip().lower()
+    if not target:
+        return None
+    aliases = {
+        "gen": "generator",
+        "generator": "generator",
+        "planner": "planner",
+        "plan": "planner",
+        "eval": "evaluator",
+        "evaluator": "evaluator",
+        "orch": "orchestrator",
+        "orchestrator": "orchestrator",
+        "arch": "archivist",
+        "archivist": "archivist",
+        "social": "social",
+        "affect": "affect",
+        "research": "research",
+    }
+    resolved = aliases.get(target, target)
+    global FORCE_REBUILD_GENERATOR, FORCE_REBUILD_PLANNER, FORCE_REBUILD_EVALUATOR
+    global FORCE_REBUILD_ORCH, FORCE_REBUILD_ARCHIVIST, FORCE_REBUILD_SOCIAL
+    global FORCE_REBUILD_AFFECT, FORCE_REBUILD_RESEARCH
+    if resolved == "generator":
+        FORCE_REBUILD_GENERATOR = True
+    elif resolved == "planner":
+        FORCE_REBUILD_PLANNER = True
+    elif resolved == "evaluator":
+        FORCE_REBUILD_EVALUATOR = True
+    elif resolved == "orchestrator":
+        FORCE_REBUILD_ORCH = True
+    elif resolved == "archivist":
+        FORCE_REBUILD_ARCHIVIST = True
+    elif resolved == "social":
+        FORCE_REBUILD_SOCIAL = True
+    elif resolved == "affect":
+        FORCE_REBUILD_AFFECT = True
+    elif resolved == "research":
+        FORCE_REBUILD_RESEARCH = True
+    else:
+        return None
+    return resolved
+
+
+def _register_cortex_fragment(
+    frag: dict,
+    kind_hint: Optional[str] = None,
+) -> Optional[str]:
+    if not isinstance(frag, dict):
+        return None
+
+    frag_copy = copy.deepcopy(frag)
+    kind = frag_copy.get("desc_type") or frag_copy.get("kind") or kind_hint
+    if not kind:
+        return None
+    kind_str = str(kind).strip()
+    if not kind_str:
+        return None
+    kind_norm = kind_str.lower()
+    if not kind_norm.endswith("_frag"):
+        if kind_norm.endswith("_patch"):
+            kind_norm = kind_norm[:-6] + "_frag"
+        else:
+            kind_norm = kind_norm + "_frag"
+
+    frag_copy["desc_type"] = kind_norm
+    frag_copy.pop("kind", None)
+    for field in ("code", "python", "render"):
+        val = frag_copy.get(field)
+        if isinstance(val, str):
+            frag_copy[field] = _normalize_module_code(val)
+    target_list = FRAG_KIND_TO_LIST.get(kind_norm)
+    if target_list is None:
+        return None
+    if frag_copy not in target_list:
+        target_list.append(frag_copy)
+    plane = kind_norm.split("_", 1)[0]
+    _force_rebuild_for_plane(plane)
+    return kind_norm
+
+
+def _plan_targets(plan: dict) -> List[str]:
+    targets: List[str] = []
+
+    def _extend(val: Any):
+        items: Iterable[Any]
+        if isinstance(val, (list, tuple, set)):
+            items = val
+        elif val is None:
+            return
+        else:
+            items = [val]
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            norm = item.strip().lower()
+            if norm and norm not in targets:
+                targets.append(norm)
+
+    _extend(plan.get("target_plane"))
+    _extend(plan.get("target"))
+    _extend(plan.get("plane"))
+    _extend(plan.get("planes"))
+    _extend(plan.get("targets"))
+    _extend(plan.get("target_cortex"))
+    return targets
+
+
+def enqueue_cortex_evolution(desc: dict) -> None:
+    if not isinstance(desc, dict):
+        return
+    plan = copy.deepcopy(desc)
+    plan.setdefault("_queued_ts", time.time())
+    CORTEX_EVOLUTION_QUEUE.append(plan)
+    try:
+        os.makedirs(os.path.join(MEM_DIR, "cortex_evolution"), exist_ok=True)
+        log_entry = {
+            "ts": plan.get("_queued_ts"),
+            "desc_type": plan.get("desc_type"),
+            "reason": plan.get("reason"),
+            "note": plan.get("note"),
+        }
+        with open(
+            os.path.join(MEM_DIR, "cortex_evolution", "queue.log"),
+            "a",
+            encoding="utf-8",
+        ) as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    report_to_host({
+        "event": "cortex_plan_enqueued",
+        "reason": plan.get("reason"),
+        "note": plan.get("note"),
+        "ts": plan.get("_queued_ts"),
+    })
+
+
+def _promote_desc(desc: dict) -> bool:
+    if not isinstance(desc, dict):
+        return False
+    if desc not in PROMOTED_DESCS:
+        PROMOTED_DESCS.append(desc)
+        return True
+    return False
+
+
+def _apply_single_cortex_plan(plan: dict, gen: int) -> dict:
+    summary: dict = {
+        "reason": plan.get("reason"),
+        "note": plan.get("note"),
+    }
+    targets = _plan_targets(plan)
+    if targets:
+        summary["targets"] = targets
+
+    forced_planes: List[str] = []
+    inserted_kinds: List[str] = []
+    promoted_count = 0
+    modules_written = 0
+    actions: List[str] = []
+
+    rebuild = plan.get("rebuild")
+    if isinstance(rebuild, str):
+        rebuild = [rebuild]
+    if isinstance(rebuild, Iterable):
+        for plane in rebuild:
+            resolved = _force_rebuild_for_plane(plane)
+            if resolved and resolved not in forced_planes:
+                forced_planes.append(resolved)
+                actions.append(f"force_rebuild:{resolved}")
+
+    for tgt in targets:
+        resolved = _force_rebuild_for_plane(tgt)
+        if resolved and resolved not in forced_planes:
+            forced_planes.append(resolved)
+
+    for frag in plan.get("insert_fragments") or []:
+        kind = _register_cortex_fragment(frag)
+        if kind and kind not in inserted_kinds:
+            inserted_kinds.append(kind)
+
+    for frag in plan.get("injections") or []:
+        kind_hint = None
+        if isinstance(frag, dict):
+            kind_hint = frag.get("kind")
+        kind = _register_cortex_fragment(frag, kind_hint=kind_hint)
+        if kind and kind not in inserted_kinds:
+            inserted_kinds.append(kind)
+
+    extra_frags = plan.get("frags") or []
+    default_kind = None
+    if targets:
+        default_kind = f"{targets[0]}_frag"
+    for frag in extra_frags:
+        kind = _register_cortex_fragment(frag, kind_hint=default_kind)
+        if kind and kind not in inserted_kinds:
+            inserted_kinds.append(kind)
+
+    for step in plan.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        op = step.get("op")
+        if op == "inject_frag":
+            plane = step.get("plane") or (targets[0] if targets else None)
+            kind_hint = f"{plane}_frag" if plane else None
+            frag = {k: v for k, v in step.items() if k in {"code", "python", "render", "desc_type", "kind"}}
+            kind = _register_cortex_fragment(frag, kind_hint=kind_hint)
+            if kind and kind not in inserted_kinds:
+                inserted_kinds.append(kind)
+        elif op in {"rebuild", "force_rebuild", "request_rebuild"}:
+            plane = step.get("plane") or (targets[0] if targets else None)
+            resolved = _force_rebuild_for_plane(plane)
+            if resolved and resolved not in forced_planes:
+                forced_planes.append(resolved)
+                actions.append(f"force_rebuild:{resolved}")
+
+    for action in plan.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        if action.get("op") == "insert_frag":
+            plane = action.get("plane") or (targets[0] if targets else None)
+            kind_hint = f"{plane}_frag" if plane else None
+            frag = {k: v for k, v in action.items() if k in {"code", "python", "render", "desc_type", "kind"}}
+            kind = _register_cortex_fragment(frag, kind_hint=kind_hint)
+            if kind and kind not in inserted_kinds:
+                inserted_kinds.append(kind)
+        elif action.get("op") in {"rebuild", "force_rebuild", "request_rebuild"}:
+            plane = action.get("plane") or (targets[0] if targets else None)
+            resolved = _force_rebuild_for_plane(plane)
+            if resolved and resolved not in forced_planes:
+                forced_planes.append(resolved)
+                actions.append(f"force_rebuild:{resolved}")
+
+    test_scenario = plan.get("test_scenario")
+    if isinstance(test_scenario, dict):
+        if _promote_desc(test_scenario):
+            promoted_count += 1
+    elif isinstance(test_scenario, list):
+        for item in test_scenario:
+            if isinstance(item, dict) and _promote_desc(item):
+                promoted_count += 1
+    elif isinstance(test_scenario, str):
+        promoted_count += _promote_desc({
+            "desc_type": "test_scenario_request",
+            "scenario": test_scenario,
+            "from_plan": plan.get("reason") or plan.get("note"),
+            "ts": time.time(),
+        })
+
+    for proposed in plan.get("proposed_descs") or []:
+        if isinstance(proposed, dict) and _promote_desc(proposed):
+            promoted_count += 1
+
+    module_source = plan.get("module_source")
+    if isinstance(module_source, str) and module_source.strip():
+        mod_name = (
+            plan.get("module_name")
+            or plan.get("target_module_root")
+            or plan.get("name")
+            or f"cortex_plan_{int(time.time() * 1000)}"
+        )
+        handle_module_emit({
+            "desc_type": "module_emit",
+            "name": mod_name,
+            "code": module_source,
+            "_origin": "cortex_plan",
+        })
+        modules_written += 1
+        actions.append("module_injected")
+
+    op = plan.get("op")
+    if op in {"simulate_removal", "simulate_detached"}:
+        sim_desc = {
+            "desc_type": "cortex_simulation_request",
+            "mode": op,
+            "params": {
+                k: v
+                for k, v in plan.items()
+                if k not in {"module_source", "insert_fragments", "injections", "frags", "steps", "actions"}
+            },
+            "gen": gen,
+            "ts": time.time(),
+        }
+        if _promote_desc(sim_desc):
+            promoted_count += 1
+        actions.append(f"simulation:{op}")
+    elif op and op not in {"insert_frags"}:
+        actions.append(f"op:{op}")
+
+    summary["forced_rebuild"] = forced_planes
+    summary["frags_added"] = inserted_kinds
+    summary["promoted_descs"] = promoted_count
+    summary["modules_written"] = modules_written
+    summary["actions"] = actions
+    return summary
+
+
+def apply_cortex_evolution_queue(gen: int) -> None:
+    if not CORTEX_EVOLUTION_QUEUE:
+        return
+    applied: List[dict] = []
+    while CORTEX_EVOLUTION_QUEUE:
+        plan = CORTEX_EVOLUTION_QUEUE.pop(0)
+        try:
+            result = _apply_single_cortex_plan(plan, gen)
+            result["ts"] = time.time()
+            applied.append(result)
+            try:
+                os.makedirs(os.path.join(MEM_DIR, "cortex_evolution"), exist_ok=True)
+                with open(
+                    os.path.join(MEM_DIR, "cortex_evolution", "applied.log"),
+                    "a",
+                    encoding="utf-8",
+                ) as f:
+                    f.write(json.dumps(result, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+        except Exception as exc:
+            traceback.print_exc()
+            report_to_host({
+                "event": "cortex_plan_error",
+                "error": str(exc),
+                "plan_note": plan.get("note"),
+                "plan_reason": plan.get("reason"),
+                "ts": time.time(),
+            })
+    if applied:
+        report_to_host({
+            "event": "cortex_plan_applied",
+            "count": len(applied),
+            "details": applied[-1],
+            "ts": time.time(),
+        })
+
+
+def handle_generator_self_patch(desc: dict) -> None:
+    if not isinstance(desc, dict):
+        return
+    code = desc.get("code") or desc.get("python") or desc.get("source")
+    if not isinstance(code, str) or not code.strip():
+        return
+    frag = {"code": code, "desc_type": "generator_frag"}
+    if desc.get("name"):
+        frag["name"] = desc.get("name")
+    if desc.get("note"):
+        frag["note"] = desc.get("note")
+    kind = _register_cortex_fragment(frag, kind_hint="generator_frag")
+    if kind:
+        report_to_host({
+            "event": "generator_self_patch_registered",
+            "kind": kind,
+            "note": desc.get("note"),
+            "ts": time.time(),
+        })
+
+    try:
+        report_to_host({
+            "event": "desc_rejected",
+            "reason": reason,
+            "ts": time.time(),
+            "desc_type": desc.get("desc_type"),
+        })
+    except Exception:
+        pass
+
 
 IDENTITY_STATE: dict = {
     "desc_type": "identity_state",
@@ -1007,7 +1437,7 @@ def choose_generator_for_desc(desc: dict) -> str:
 def fallback_generate_module_from_desc(desc: dict) -> str:
     return "\n".join([
         "# fallback generator (S987 cosmic)",
-        f"DESC = {json.dumps(desc, ensure_ascii=False)}",
+        f"DESC = {repr(desc)}",
         "",
         "def run(ctx=None):",
         "    return DESC",
@@ -1132,6 +1562,26 @@ def auto_apply_module_fix(fix: dict):
         f.write(new_src)
 
 
+def _normalize_module_code(code: str) -> str:
+    if not isinstance(code, str):
+        return ""
+
+    try:
+        decoded = code.encode("utf-8").decode("unicode_escape")
+        try:
+            code = decoded.encode("latin-1").decode("utf-8")
+        except UnicodeDecodeError:
+            code = decoded
+    except Exception:
+        pass
+
+    def _repl(m: re.Match[str]) -> str:
+        w = m.group(0)
+        return {"true": "True", "false": "False", "null": "None"}.get(w, w)
+
+    return re.sub(r"\b(true|false|null)\b", _repl, code)
+
+
 def _extract_python_from_json_module(name: str, source: str) -> Optional[str]:
     txt = source.lstrip()
     if not (txt.startswith("{") and '"code"' in txt and '"desc_type"' in txt):
@@ -1143,18 +1593,61 @@ def _extract_python_from_json_module(name: str, source: str) -> Optional[str]:
     code = desc.get("code") or desc.get("python") or desc.get("source")
     if not code:
         return None
-    if "\\n" in code and "\n" not in code:
-        try:
-            code = code.encode("utf-8").decode("unicode_escape")
-        except Exception:
-            pass
+    return _normalize_module_code(code)
 
-    def _repl(m):
-        w = m.group(0)
-        return {"true": "True", "false": "False", "null": "None"}.get(w, w)
 
-    code = re.sub(r"\b(true|false|null)\b", _repl, code)
-    return code
+def _sanitize_emitted_name(name: Optional[str]) -> str:
+    base = name or f"emitted_{int(time.time() * 1000)}"
+    base = re.sub(r"[^A-Za-z0-9_.-]", "_", base).strip("._")
+    if not base:
+        base = f"emitted_{int(time.time() * 1000)}"
+    if not base.endswith(".py"):
+        base = base + ".py"
+    return base
+
+
+def handle_module_emit(desc: dict) -> Optional[str]:
+    global sandbox_streams
+    if not isinstance(desc, dict):
+        return None
+
+    raw_code = desc.get("code") or desc.get("python") or desc.get("source")
+    if not isinstance(raw_code, str) or not raw_code.strip():
+        return None
+
+    code = _normalize_module_code(raw_code)
+    if not code.strip():
+        return None
+
+    fname = _sanitize_emitted_name(desc.get("name") or desc.get("module_name"))
+    os.makedirs(EMITTED_DIR, exist_ok=True)
+    pathf = os.path.join(EMITTED_DIR, fname)
+    if os.path.exists(pathf):
+        stem, ext = os.path.splitext(fname)
+        idx = 1
+        while os.path.exists(pathf):
+            alt_name = f"{stem}_{idx}{ext or '.py'}"
+            pathf = os.path.join(EMITTED_DIR, alt_name)
+            idx += 1
+        fname = os.path.basename(pathf)
+
+    with open(pathf, "w", encoding="utf-8") as f:
+        f.write(code)
+
+    key = f"module:emitted/{fname}"
+    sandbox_streams[key] = code.encode("utf-8")
+
+    try:
+        report_to_host({
+            "event": "module_emitted",
+            "file": fname,
+            "ts": time.time(),
+            "source": desc.get("_origin") or "handle_module_emit",
+        })
+    except Exception:
+        pass
+
+    return fname
 
 
 def safe_exec_module_source(name: str, source: str, ctx: dict) -> List[dict]:
@@ -1685,6 +2178,44 @@ def is_new(blob: bytes) -> bool:
     seen_hashes.add(h)
     return True
 
+
+def learn_patterns(pool: bytes) -> bytes:
+    sample = pool[:256]
+    try:
+        preview = sample.decode("utf-8", errors="ignore")
+    except Exception:
+        preview = ""
+    payload = {
+        "len": len(pool),
+        "preview": preview,
+        "ts": time.time(),
+    }
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def scan_and_promote_from_pool(pool: bytes) -> None:
+    try:
+        text = pool.decode("utf-8", errors="ignore")
+    except Exception:
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("{"):
+            continue
+        try:
+            desc = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(desc, dict) and desc not in PROMOTED_DESCS:
+            PROMOTED_DESCS.append(desc)
+
+
+def compact_pool(pool: bytes, max_size: int = 1_000_000) -> bytes:
+    if len(pool) <= max_size:
+        return pool
+    return pool[-max_size:]
+
+
 def run_engine(engine: bytes, pool: bytes):
     global AUTO_INFERRED_SIGS
 
@@ -1763,22 +2294,22 @@ def collect_fragments_from_promoted():
             handle_generator_self_patch(d)
             continue
 
-        if dt in ("generator_frag", "generator_patch") and d not in GEN_FRAGS:
-            GEN_FRAGS.append(d)
-        elif dt in ("planner_frag", "planner_patch") and d not in PLAN_FRAGS:
-            PLAN_FRAGS.append(d)
-        elif dt in ("evaluator_frag", "evaluator_patch") and d not in EVAL_FRAGS:
-            EVAL_FRAGS.append(d)
-        elif dt in ("orchestrator_frag", "orchestrator_patch") and d not in ORCH_FRAGS:
-            ORCH_FRAGS.append(d)
-        elif dt in ("archivist_frag", "archivist_patch") and d not in ARCH_FRAGS:
-            ARCH_FRAGS.append(d)
-        elif dt in ("social_frag", "social_patch") and d not in SOCIAL_FRAGS:
-            SOCIAL_FRAGS.append(d)
-        elif dt in ("affect_frag", "affect_patch") and d not in AFFECT_FRAGS:
-            AFFECT_FRAGS.append(d)
-        elif dt in ("research_frag", "research_patch") and d not in RESEARCH_FRAGS:
-            RESEARCH_FRAGS.append(d)
+        if dt in ("generator_frag", "generator_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
+        elif dt in ("planner_frag", "planner_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
+        elif dt in ("evaluator_frag", "evaluator_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
+        elif dt in ("orchestrator_frag", "orchestrator_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
+        elif dt in ("archivist_frag", "archivist_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
+        elif dt in ("social_frag", "social_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
+        elif dt in ("affect_frag", "affect_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
+        elif dt in ("research_frag", "research_patch"):
+            _register_cortex_fragment(d, kind_hint=dt)
 
 # ============================================================
 # MAIN LOOP
