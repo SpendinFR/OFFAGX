@@ -999,7 +999,6 @@ def synthesize_skill_module(task_desc: dict) -> Optional[str]:
         "Le module doit:\n"
         "- lire ses données dans ctx (ctx peut contenir 'text', 'data', 'question')\n"
         "- retourner un dict avec 'desc_type' parlant, par ex. 'skill_result'\n"
-        "- ne pas faire de réseau\n"
         "- être compatible Python 3.11\n"
     )
     code = call_local_llm(prompt)
@@ -1836,6 +1835,10 @@ def apply_promoted(gen: int, wants: List[dict], engine: bytes) -> bytes:
         d = migrate_desc_if_needed(d)
         dt = d.get("desc_type")
 
+        if d.get("_rejected"):
+            # déjà traité : on saute pour éviter de rejeter plusieurs fois
+            continue
+
         # 0.a détection automatique de besoin de skill (générique)
         # on évite de le refaire si on l'a déjà fait
         if not d.get("_skill_checked"):
@@ -1847,6 +1850,9 @@ def apply_promoted(gen: int, wants: List[dict], engine: bytes) -> bytes:
         # 0.b identité / sécurité
         if _is_identity_threat(d):
             reject_desc(d)
+            d["_rejected"] = True
+            if d in PROMOTED_DESCS:
+                PROMOTED_DESCS.remove(d)
             continue
 
         # 1. champs "emit_*" qu'on a vus dans tes JSON
