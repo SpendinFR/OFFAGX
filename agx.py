@@ -1565,14 +1565,21 @@ def _normalize_module_code(code: str) -> str:
     if not isinstance(code, str):
         return ""
 
-    try:
-        decoded = code.encode("utf-8").decode("unicode_escape")
+    should_decode = False
+    if "\\n" in code and "\n" not in code and code.count("\\n") >= 2:
+        should_decode = True
+    if not should_decode and re.search(r'\\"', code):
+        should_decode = True
+
+    if should_decode:
         try:
-            code = decoded.encode("latin-1").decode("utf-8")
-        except UnicodeDecodeError:
-            code = decoded
-    except Exception:
-        pass
+            decoded = code.encode("utf-8").decode("unicode_escape")
+            try:
+                code = decoded.encode("latin-1").decode("utf-8")
+            except UnicodeDecodeError:
+                code = decoded
+        except Exception:
+            pass
 
     def _repl(m: re.Match[str]) -> str:
         w = m.group(0)
