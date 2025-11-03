@@ -66,6 +66,7 @@ import urllib.request
 import urllib.error
 import zipfile
 import copy
+import ast
 import builtins as _builtins
 from typing import Dict, List, Tuple, Iterable, Optional, Any, Callable
 
@@ -1565,27 +1566,52 @@ def _normalize_module_code(code: str) -> str:
     if not isinstance(code, str):
         return ""
 
-    should_decode = False
-    if "\\n" in code and "\n" not in code and code.count("\\n") >= 2:
-        should_decode = True
-    if not should_decode and re.search(r'\\"', code):
-        should_decode = True
+    def _bool_fix(src: str) -> str:
+        def _repl(m: re.Match[str]) -> str:
+            w = m.group(0)
+            return {"true": "True", "false": "False", "null": "None"}.get(w, w)
 
-    if should_decode:
+        return re.sub(r"\b(true|false|null)\b", _repl, src)
+
+    def _decode_once(src: str) -> Optional[str]:
         try:
-            decoded = code.encode("utf-8").decode("unicode_escape")
-            try:
-                code = decoded.encode("latin-1").decode("utf-8")
-            except UnicodeDecodeError:
-                code = decoded
+            decoded = src.encode("utf-8").decode("unicode_escape")
         except Exception:
-            pass
+            return None
+        try:
+            return decoded.encode("latin-1").decode("utf-8")
+        except UnicodeDecodeError:
+            return decoded
 
-    def _repl(m: re.Match[str]) -> str:
-        w = m.group(0)
-        return {"true": "True", "false": "False", "null": "None"}.get(w, w)
+    candidates: List[str] = []
+    seen: set[str] = set()
 
-    return re.sub(r"\b(true|false|null)\b", _repl, code)
+    def _add_candidate(src: Optional[str]):
+        if isinstance(src, str) and src not in seen:
+            seen.add(src)
+            candidates.append(src)
+
+    _add_candidate(code)
+
+    decoded1 = _decode_once(code)
+    if decoded1:
+        _add_candidate(decoded1)
+        decoded2 = _decode_once(decoded1)
+        if decoded2:
+            _add_candidate(decoded2)
+
+    last_candidate = code
+    for cand in candidates:
+        normalized = _bool_fix(cand)
+        try:
+            ast.parse(normalized)
+            return normalized
+        except SyntaxError:
+            last_candidate = normalized
+        except Exception:
+            last_candidate = normalized
+
+    return last_candidate
 
 
 def _extract_python_from_json_module(name: str, source: str) -> Optional[str]:
