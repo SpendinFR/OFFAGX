@@ -679,16 +679,6 @@ def handle_generator_self_patch(desc: dict) -> None:
             "ts": time.time(),
         })
 
-    try:
-        report_to_host({
-            "event": "desc_rejected",
-            "reason": reason,
-            "ts": time.time(),
-            "desc_type": desc.get("desc_type"),
-        })
-    except Exception:
-        pass
-
 
 IDENTITY_STATE: dict = {
     "desc_type": "identity_state",
