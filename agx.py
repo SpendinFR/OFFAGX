@@ -1436,7 +1436,7 @@ def choose_generator_for_desc(desc: dict) -> str:
 def fallback_generate_module_from_desc(desc: dict) -> str:
     return "\n".join([
         "# fallback generator (S987 cosmic)",
-        f"DESC = {json.dumps(desc, ensure_ascii=False)}",
+        f"DESC = {repr(desc)}",
         "",
         "def run(ctx=None):",
         "    return DESC",
@@ -1564,11 +1564,15 @@ def auto_apply_module_fix(fix: dict):
 def _normalize_module_code(code: str) -> str:
     if not isinstance(code, str):
         return ""
-    if "\\n" in code and "\n" not in code:
+
+    try:
+        decoded = code.encode("utf-8").decode("unicode_escape")
         try:
-            code = code.encode("utf-8").decode("unicode_escape")
-        except Exception:
-            pass
+            code = decoded.encode("latin-1").decode("utf-8")
+        except UnicodeDecodeError:
+            code = decoded
+    except Exception:
+        pass
 
     def _repl(m: re.Match[str]) -> str:
         w = m.group(0)
