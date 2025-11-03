@@ -1886,10 +1886,11 @@ def apply_promoted(gen: int, wants: List[dict], engine: bytes) -> bytes:
 
         # 0.b identité / sécurité
         if _is_identity_threat(d):
-            reject_desc(d)
+            # Marque immédiatement le desc comme rejeté pour éviter tout retraitement
             d["_rejected"] = True
-            if d in PROMOTED_DESCS:
-                PROMOTED_DESCS.remove(d)
+            reject_desc(d)
+            # Purge tous les descs rejetés pour éviter la régénération de traces
+            PROMOTED_DESCS[:] = [existing for existing in PROMOTED_DESCS if not existing.get("_rejected")]
             continue
 
         # 1. champs "emit_*" qu'on a vus dans tes JSON
